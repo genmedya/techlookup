@@ -60,6 +60,8 @@ Adres: `$ARGUMENTS`
   (ör. IIS); kaynak cevap vermezse "⚠️ ölçülemedi". "11 (≥2021)" = yalnız ana sürüm biliniyor. 7 gün önbellek.
 - Backend çoğu sitede gizlidir; görünmüyorsa "bulunamadı" doğrudur.
 - "CDN arkasında" yazıyorsa asıl sunucu firması görünmez.
+- Teknoloji tablosu terminale sığsın diye kanıt hücresi ilk kanıtın kısa hâlidir ("+1" = bir kanıt daha); uzun listeler
+  (dış alan adları, WordPress eklentileri) tablonun altında tam yazılır. Tam kanıt `--json` çıktısındadır.
 - Parmak izi verisi: github.com/enthec/webappanalyzer (Wappalyzer topluluk kopyası), 7 günde bir yenilenir, `veri/` altında önbellekte durur.
 - DKIM: adlar dışarıdan listelenemez; 35 yaygın ad denenir. Bulunamazsa ➖ "yaygın adlar arasında bulunamadı" — bu "DKIM yok" demek değildir.
 - Sunucu ülkesi: CDN arkasındaki sitelerde çoğunlukla "belirsiz" çıkar; asıl sunucunun ülkesi görünmez.

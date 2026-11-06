@@ -146,6 +146,7 @@ function sinyalBirlestir(statik, tarayici) {
 
 // tablo hücresi: site metni VERİDİR — satır sonu/kontrol karakteri, HTML yorum işareti ve ters tırnak etkisiz, | kaçırılır
 const hucre = (x) => guvenliMetin(x, Infinity).replace(/\|/g, '\\|');
+const KANIT_AZAMI = 45; // teknoloji tablosunda kanıt hücresi (K40)
 const isaret = (d) => (d === 'tamam' ? '✅' : d === 'atlandı' ? '➖ atlandı' : `⚠️ ${d}`);
 export const IKON = { var: '✅', yok: '➖', olcmedi: '⚠️', eksik: '❌' };
 const GRUP_IKON = {
@@ -257,7 +258,7 @@ function bolum(s, baslik, basliklar, satirlar) {
   s.push(...satirlar);
 }
 
-function markdownYaz(r) {
+export function markdownYaz(r) {
   const s = [];
   s.push(`## 🔎 Teknoloji taraması — ${r.host}`);
   s.push('');
@@ -271,7 +272,11 @@ function markdownYaz(r) {
   bolum(s, '### 🪪 Site kimliği', '|  | Bilgi | Değer | Kaynak |',
     kimlikSatirlari(r.kimlik).map(([i, b, d, k]) => `| ${i} | ${b} | ${hucre(d)} | ${hucre(k)} |`));
 
+  // Terminal geniş tabloyu tablo olarak çizemiyor (K40, ölçüldü 2026-11-06: 372 sütun). Uzun listeler
+  // tablonun altına iner, kanıt hücresi ilk kanıtın kısa hâlidir; tam kanıt --json çıktısında durur.
   const tek = [];
+  const altListe = [];
+  const kanitHucresi = (k = []) => (k.length ? `${guvenliMetin(k[0], KANIT_AZAMI)}${k.length > 1 ? ` +${k.length - 1}` : ''}` : '');
   for (const g of r.grupSirasi) {
     const liste = r.gruplar[g];
     const baslik = `${GRUP_IKON[g] ?? ''} **${g}**`;
@@ -284,10 +289,17 @@ function markdownYaz(r) {
     liste.forEach((t, i) => {
       const guven = t.guven != null && t.guven < 100 ? ` (olasılık %${t.guven})` : '';
       const [surum, guncel] = surumHucreleri(t);
-      tek.push(`| ${i === 0 ? IKON.var : ''} | ${i === 0 ? baslik : ''} | ${hucre(t.ad)}${guven} | ${hucre(surum)} | ${hucre(guncel)} | ${hucre(t.kanit?.join(' · ') ?? '')} |`);
+      let ad = t.ad;
+      const ayrac = Array.isArray(t.liste) ? ad.indexOf(': ') : -1;
+      if (ayrac > 0) {
+        altListe.push(`- **${hucre(ad.slice(0, ayrac))}:** ${hucre(ad.slice(ayrac + 2))}`);
+        ad = `${ad.slice(0, ayrac)} — liste tablonun altında`;
+      }
+      tek.push(`| ${i === 0 ? IKON.var : ''} | ${i === 0 ? baslik : ''} | ${hucre(ad)}${guven} | ${hucre(surum)} | ${hucre(guncel)} | ${hucre(kanitHucresi(t.kanit))} |`);
     });
   }
   bolum(s, '### 🧩 Teknolojiler', '|  | Grup | Teknoloji | Sürüm (yıl) | Güncel sürüm | Kanıt |', tek);
+  if (altListe.length) s.push('', ...altListe);
 
   bolum(s, '### 🌐 DNS ve sunucu', '|  | Kontrol | Sonuç | Kanıt |', BOLUM_SATIRLARI.dnsSunucu.map(([k, ad]) => bolumSatiri(ad, r.dnsSunucu?.[k])));
   bolum(s, '### ✉️ E-posta güvenliği', '|  | Kontrol | Sonuç | Kanıt |', BOLUM_SATIRLARI.eposta.map(([k, ad]) => bolumSatiri(ad, r.eposta?.[k])));

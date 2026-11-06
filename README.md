@@ -84,9 +84,12 @@ Bölümler: 🪪 Kimlik · 🧩 Teknoloji · 🌐 DNS ve sunucu · ✉️ E-post
 ### 🧩 Teknolojiler
 | ✅ | 📝 CMS      | WordPress                 | 6.4.3 (2024) | 6.8.2 (2026) | /feed/ generator |
 |    |             | WordPress teması: ornek-tema |           |              | /wp-content/themes/ |
-|    |             | WordPress eklentileri (2): contact-form-7, wordpress-seo | | | /wp-content/plugins/ |
+|    |             | WordPress eklentileri (2) — liste tablonun altında | | | /wp-content/plugins/ |
 | ✅ | 📊 Analytics | Google Analytics         | GA4          |              | script |
-| ✅ | 🧩 Diğer    | Dış alan adları (3): facebook.net, googletagmanager.com, ornekcrm.io | | | tarayıcı istekleri |
+| ✅ | 🧩 Diğer    | Dış alan adları (3) — liste tablonun altında | | | tarayıcı istekleri |
+
+- **WordPress eklentileri (2):** contact-form-7, wordpress-seo
+- **Dış alan adları (3):** facebook.net, googletagmanager.com, ornekcrm.io
 
 ### 🌐 DNS ve sunucu
 | ➖ | DNSSEC (alan adı kayıtlarının imzası)       | kapalı (DS kaydı yok)                  | DNS |
