@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import tls from 'node:tls';
 import { veritabaniDerle, eslestir, tarayiciIstekleri, adresTeknolojileri } from './eslesme.mjs';
 import { grupla, GRUPLAR } from './kategoriler.mjs';
-import { dnsTopla, dnsYorumla, kokAlan, dnsGuvenlik, sunucuBilgisi, sunucuIp } from './dns.mjs';
+import { dnsTopla, dnsYorumla, kokAlan, dnsGuvenlik, sunucuBilgisi, sunucuIp, cloudflareBulut, CF_ETIKET } from './dns.mjs';
 import { satir, SURUM, guvenliMetin, yorumSuz, dogrudanMi } from './ortak.mjs';
 import { cmsSurumu } from './cms-surum.mjs';
 import { wordpressIzleri, disAlanAdlari, paylasimEtiketleri } from './sayfa.mjs';
@@ -225,7 +225,7 @@ export function kimlikSatirlari(k) {
 }
 
 export const BOLUM_SATIRLARI = {
-  dnsSunucu: [['dnssec', 'DNSSEC (alan adı kayıtlarının imzası)'], ['caa', 'CAA (hangi firma sertifika verebilir)'], ['soa', 'SOA (birincil ad sunucusu)'], ['https', 'HTTPS kaydı (DNS\'te bağlantı ipucu)'], ['ulke', 'Sunucu ülkesi'], ['yesil', 'Yeşil enerji']],
+  dnsSunucu: [['dnssec', 'DNSSEC (alan adı kayıtlarının imzası)'], ['caa', 'CAA (hangi firma sertifika verebilir)'], ['soa', 'SOA (birincil ad sunucusu)'], ['cloudflare', 'Cloudflare bulutu'], ['https', 'HTTPS kaydı (DNS\'te bağlantı ipucu)'], ['ulke', 'Sunucu ülkesi'], ['yesil', 'Yeşil enerji']],
   eposta: [['spf', 'SPF (kimler bu alan adıyla posta gönderebilir)'], ['dmarc', 'DMARC (sahte postaya ne yapılır)'], ['dkim', 'DKIM (posta imzası)'], ['mtaSts', 'MTA-STS (şifreli posta zorunluluğu)'], ['tlsRpt', 'TLS-RPT (şifreleme hata raporu)'], ['bimi', 'BIMI (gelen kutusunda marka logosu)']],
   guvenlikEk: [['kapsam', 'Sertifika kapsamı'], ['yonlendirme', 'Yönlendirme zinciri'], ['hstsOnyukleme', 'HSTS önyükleme koşulları'], ['cerezler', 'Çerez bayrakları']],
   dosyalar: [['robots', 'robots.txt'], ['sitemap', 'sitemap.xml'], ['securityTxt', 'security.txt'], ['llms', 'llms.txt'], ['ads', 'ads.txt'], ['humans', 'humans.txt']],
@@ -302,6 +302,11 @@ export function markdownYaz(r) {
   if (altListe.length) s.push('', ...altListe);
 
   bolum(s, '### 🌐 DNS ve sunucu', '|  | Kontrol | Sonuç | Kanıt |', BOLUM_SATIRLARI.dnsSunucu.map(([k, ad]) => bolumSatiri(ad, r.dnsSunucu?.[k])));
+  // iki ad (yönlendiren + sayfa) tablo hücresine sığmaz (K41-genislik): ad ad liste tablonun altında
+  const cf = r.dnsSunucu?.cloudflare?.hostlar;
+  if (cf?.length > 1) {
+    s.push('', `- **Cloudflare bulutu, ad ad:** ${cf.map((h) => `${guvenliMetin(h.host, 80)}: ${CF_ETIKET[h.sinif] ?? CF_ETIKET.olcmedi}${h.ip ? ` (IP ${h.ip}${h.cname ? ` · CNAME ${guvenliMetin(h.cname, 60)}` : ''})` : ''}`).join(' · ')}`);
+  }
   bolum(s, '### ✉️ E-posta güvenliği', '|  | Kontrol | Sonuç | Kanıt |', BOLUM_SATIRLARI.eposta.map(([k, ad]) => bolumSatiri(ad, r.eposta?.[k])));
 
   bolum(s, '### 🔒 SSL ve güvenlik', '|  | Kontrol | Sonuç | Kanıt |', sslSatirlari(r).map(([i, ad, d, k]) => `| ${i} | ${ad} | ${hucre(d)} | ${hucre(k)} |`));
@@ -340,6 +345,8 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
   // dig A yerel çözümleyicide zaman aşımına düşebiliyor (ölçüldü 2026-10-17): IP yoksa sistem çözümleyicisi
   const sunucuSozu = yerel ? Promise.resolve(null) : sunucuIp(host, dnsHam).then(({ ip }) => sunucuBilgisi(host, ip));
   const dosyalarSozu = siteDosyalari(new URL(st.veri?.url ?? adres).origin);
+  // yönlendiren ad ve sayfanın son adresi ayrı ayrı (ör. acibadem.com.tr → www, yalnız www Cloudflare'de)
+  const cloudflareSozu = yerel ? Promise.resolve(null) : cloudflareBulut({ hostlar: [host, new URL(st.veri?.url ?? adres).hostname] });
 
   // arşiv karşılaştırması tarayıcıyla aynı anda koşar; canlı iz ham sayfa kodundan çıkar (arşiv de ham kodu verir)
   const sablonSozu = yerel ? Promise.resolve({ durum: 'ölçülemedi (yerel adres, arşivde yok)' })
@@ -400,7 +407,7 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
   // CMS sürümü bilinen dosyadan dolar, sonra yıl/güncel sürüm o sürüme göre bulunur
   const sayfaOrigin = new URL(sinyal.url ?? adres).origin;
   const surumSozu = cmsSurumu(gruplar, sayfaOrigin, sinyal.html).then(() => surumleriEkle(gruplar));
-  const [alanAdi, sablon, , dnsG, sunucu, epostaHam, dosyalar] = await Promise.all([alanAdiSozu, sablonSozu, surumSozu, dnsGuvenlikSozu, sunucuSozu, epostaSozu, dosyalarSozu]);
+  const [alanAdi, sablon, , dnsG, sunucu, epostaHam, dosyalar, cloudflare] = await Promise.all([alanAdiSozu, sablonSozu, surumSozu, dnsGuvenlikSozu, sunucuSozu, epostaSozu, dosyalarSozu, cloudflareSozu]);
 
   // WordPress teması / eklentileri: sayfa kodu ve isteklerdeki /wp-content/ yollarından (ek istek yok)
   const wp = wordpressIzleri({ html: sinyal.html, istekler: sinyal.istekler, scriptSrc: sinyal.scriptSrc });
@@ -421,7 +428,7 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
   if (dis.liste.length) (gruplar['Diğer'] ??= []).push({ ad: `Dış alan adları (${dis.liste.length}): ${dis.ad}`, kategoriler: [], surum: null, liste: dis.liste, kanit: [izKaynak] });
   const eposta = Object.fromEntries(['spf', 'dmarc', 'dkim', 'mtaSts', 'tlsRpt', 'bimi'].map((k) => [k, epostaHam?.[k] ?? yerelSatir()]));
   const dnsSunucu = {
-    dnssec: dnsG?.dnssec ?? yerelSatir(), caa: dnsG?.caa ?? yerelSatir(), soa: dnsG?.soa ?? yerelSatir(), https: dnsG?.https ?? yerelSatir(),
+    dnssec: dnsG?.dnssec ?? yerelSatir(), caa: dnsG?.caa ?? yerelSatir(), soa: dnsG?.soa ?? yerelSatir(), cloudflare: cloudflare ?? yerelSatir(), https: dnsG?.https ?? yerelSatir(),
     ulke: sunucu?.ulke ?? yerelSatir(), yesil: sunucu?.yesil ?? yerelSatir(),
   };
   // sayfadaki imza önceliklidir; yoksa humans.txt'teki ajans adayı
@@ -441,6 +448,7 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
       dosyalar: Object.values(dosyalar).every((x) => x.durum === 'olcmedi') ? 'ölçülemedi' : 'tamam',
       ulke: yerel ? 'atlandı' : dnsSunucu.ulke.durum === 'olcmedi' ? 'ölçülemedi' : 'tamam',
       yesilEnerji: yerel ? 'atlandı' : dnsSunucu.yesil.durum === 'olcmedi' ? 'ölçülemedi' : 'tamam',
+      cloudflare: yerel ? 'atlandı' : dnsSunucu.cloudflare.durum === 'olcmedi' ? 'ölçülemedi' : 'tamam',
     },
     ssl: ssl ? { veren: ssl.veren, bitis: ssl.bitis, tls: ssl.tls, gecerli: ssl.gecerli, adlar: ssl.kapsam.adlar, kalanGun: ssl.kapsam.kalanGun } : null,
     guvenlik,

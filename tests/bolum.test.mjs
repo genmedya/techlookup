@@ -57,7 +57,7 @@ async function cikti() {
 const BOLUMLER = [
   ['### 🪪 Site kimliği', ['Alan adı sahibi', 'Kayıt tarihi', 'Bitiş tarihi', 'Kayıt firması', 'Arşivde ilk görülme', 'Siteyi yapan ajans', 'Önceki siteyi yapan ajans', 'Bu şablonla yayında']],
   ['### 🧩 Teknolojiler', ['CMS', 'Analytics', 'E-posta altyapısı']],
-  ['### 🌐 DNS ve sunucu', ['DNSSEC', 'CAA', 'SOA', 'HTTPS kaydı', 'Sunucu ülkesi', 'Yeşil enerji']],
+  ['### 🌐 DNS ve sunucu', ['DNSSEC', 'CAA', 'SOA', 'Cloudflare bulutu', 'HTTPS kaydı', 'Sunucu ülkesi', 'Yeşil enerji']],
   ['### ✉️ E-posta güvenliği', ['SPF', 'DMARC', 'DKIM', 'MTA-STS', 'TLS-RPT', 'BIMI']],
   ['### 🔒 SSL ve güvenlik', ['Sertifika', 'HSTS', 'CSP', 'Sertifika kapsamı', 'Yönlendirme zinciri', 'HSTS önyükleme', 'Çerez bayrakları']],
   ['### 📄 Site dosyaları', ['robots.txt', 'sitemap.xml', 'security.txt', 'llms.txt', 'ads.txt', 'humans.txt']],
@@ -89,7 +89,7 @@ test('K37 --json sözleşmesi — 1.0.0 anahtarları yerinde, yeni anahtarlar ve
   for (const k of ['statik', 'tarayici', 'dns', 'ssl']) assert.equal(typeof r.durum[k], 'string', `durum.${k}`);
   assert.equal(r.surum, paket.version);
   const alt = {
-    dnsSunucu: ['dnssec', 'caa', 'soa', 'https', 'ulke', 'yesil'],
+    dnsSunucu: ['dnssec', 'caa', 'soa', 'cloudflare', 'https', 'ulke', 'yesil'],
     eposta: ['spf', 'dmarc', 'dkim', 'mtaSts', 'tlsRpt', 'bimi'],
     guvenlikEk: ['kapsam', 'yonlendirme', 'hstsOnyukleme', 'cerezler'],
     dosyalar: ['robots', 'sitemap', 'securityTxt', 'llms', 'ads', 'humans'],
@@ -102,7 +102,7 @@ test('K37 --json sözleşmesi — 1.0.0 anahtarları yerinde, yeni anahtarlar ve
       assert.equal(typeof s.deger, 'string', `${ust}.${a}.deger`);
     }
   }
-  for (const k of ['eposta', 'dosyalar', 'yonlendirme', 'ulke', 'yesilEnerji']) assert.match(r.durum[k] ?? '', /^(tamam|ölçülemedi|atlandı)$/, `durum.${k}`);
+  for (const k of ['eposta', 'dosyalar', 'yonlendirme', 'ulke', 'yesilEnerji', 'cloudflare']) assert.match(r.durum[k] ?? '', /^(tamam|ölçülemedi|atlandı)$/, `durum.${k}`);
 
   // ölçülemeyen tarama da sürümünü söyler
   let ham;
@@ -156,4 +156,10 @@ test('K-SURE-B süre sınırı — hiç cevap vermeyen kaynakta yeni toplayıcı
   const g = { CMS: [{ ad: 'WordPress', surum: null, kanit: [] }] };
   await sinirli('cmsSurumu', cmsSurumu(g, 'https://www.example.com', '', { getir: asili, sure: SURE }));
   assert.equal(g.CMS[0].surum, null);
+});
+
+test('K41-bolum toplu CSV — Cloudflare bulutu sütunu DNS bölümünde', async () => {
+  const { SUTUNLAR } = await import('../scripts/toplu.mjs');
+  assert.ok(SUTUNLAR.includes('dns_cloudflare'), 'dns_cloudflare sütunu yok');
+  assert.ok(SUTUNLAR.indexOf('dns_cloudflare') > SUTUNLAR.indexOf('dns_soa'), 'sütun SOA sonrasında değil');
 });

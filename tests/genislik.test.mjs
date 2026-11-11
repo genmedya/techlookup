@@ -63,3 +63,41 @@ test('K40 teknoloji tablosu terminal genişliğini aşmaz, bilgi kaybolmaz', asy
   for (const a of ALANLAR) assert.ok(md.includes(a), `dış alan adı kayıp: ${a}`);
   for (const v of ['3.7.0 (2023)', '4.0.0 (2026)', '3.32.2 (2023)', '3.51.0 (2026)', 'kaynakta yok', 'DNS sorgusu cevap vermedi']) assert.ok(md.includes(v), `kayıp: ${v}`);
 });
+
+// K41-genislik: yeni Cloudflare satırı iki host taşır (yönlendiren ad + sayfa); DNS tablosu da bütçeyi aşmamalı.
+test('K41-genislik DNS ve sunucu tablosu iki hostlu Cloudflare satırıyla bütçeyi aşmaz', async () => {
+  const { markdownYaz } = await import(join(kok, 'scripts', 'techlookup.mjs'));
+  const { cloudflareBulut } = await import(join(kok, 'scripts', 'dns.mjs'));
+  const ad = 'ornek-saglik-hastaneleri.com.tr';
+  const cevap = (...s) => `;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 1\n\n;; ANSWER SECTION:\n${s.join('\n')}\n`;
+  const t = {
+    [`NS ${ad}`]: cevap(`${ad}.\t300\tIN\tNS\tdnsa1.vodafone-kurumsal-dns.net.tr.`),
+    [`A ${ad}`]: cevap(`${ad}.\t300\tIN\tA\t31.145.21.10`),
+    [`CNAME www.${ad}`]: cevap(`www.${ad}.\t300\tIN\tCNAME\twww.${ad}.cdn.cloudflare.net.`),
+    [`A www.${ad}`]: cevap(`www.${ad}.cdn.cloudflare.net.\t300\tIN\tA\t104.20.20.188`),
+  };
+  const cloudflare = await cloudflareBulut({ kok: ad, hostlar: [ad, `www.${ad}`] }, {
+    calistir: async (tur, a) => ({ stdout: t[`${tur} ${a}`] ?? cevap() }), yedek: 'yok', lookup: async () => { throw new Error('yok'); },
+  });
+  const s = (durum, deger, kanit = '') => ({ durum, deger, kanit });
+  const md = markdownYaz({
+    ...r,
+    dnsSunucu: {
+      dnssec: s('yok', 'kapalı (DS kaydı yok)', 'DNS: NOERROR'),
+      caa: s('yok', 'kayıt yok (her sertifika firması verebilir)', 'DNS: NOERROR · 1.1.1.1 üzerinden (yerel çözümleyici cevap vermedi)'),
+      soa: s('var', 'birincil: dnx1.vodafone.net.tr · yönetici adresi tanımlı', 'SOA'),
+      cloudflare,
+      https: s('olcmedi', 'ölçülemedi — DNS SERVFAIL'),
+      ulke: s('var', 'Türkiye (TR)', `RIPEstat (MaxMind GeoLite) · ${ad} · IP 31.145.21.10`),
+      yesil: s('yok', 'kayıtta yeşil enerji beyanı yok', 'Green Web Foundation'),
+    },
+  });
+  const dns = tablolar(md)['### 🌐 DNS ve sunucu'];
+  assert.ok(dns?.some((x) => x[1]?.startsWith('Cloudflare bulutu')), 'Cloudflare satırı yok');
+  const w = genislik(dns);
+  assert.ok(w <= BUTCE, `DNS tablosu ${w} sütun (bütçe ${BUTCE})`);
+  for (const x of dns) assert.equal(x.length, dns[0].length, `sütun sayısı tutmuyor: ${x.join(' | ')}`);
+  // bilgi kaybı yok: iki ad da durumu ve IP'siyle tablonun altında
+  assert.ok(md.includes(`www.${ad}: 🟠 turuncu · DNS başka firmada (IP 104.20.20.188`), 'sayfa adı alt listede yok');
+  assert.ok(md.includes(`· ${ad}: ➖ Cloudflare'den geçmiyor (IP 31.145.21.10`), 'yönlendiren ad alt listede yok');
+});
