@@ -1,6 +1,6 @@
 ---
 name: techlookup
-description: Bir web sitesini 7 bölümlük tek raporda çıkarır — kimlik (alan adı sahibi ve yaşı, siteyi yapan ajans, arşivde ilk görülme, şablonun ne zamandan beri yayında olduğu), teknolojiler (Wappalyzer gibi 15 grup; CMS sürümü, WordPress tema/eklentileri, dış alan adları), DNS ve sunucu (DNSSEC, CAA, SOA, HTTPS kaydı, ülke, yeşil enerji), e-posta güvenliği (SPF, DMARC, DKIM, MTA-STS, TLS-RPT, BIMI), SSL ve güvenlik (sertifika, başlıklar, yönlendirme, HSTS önyükleme, çerez bayrakları), site dosyaları (robots, sitemap, security.txt, llms.txt, ads.txt, humans.txt) ve paylaşım etiketleri. Her bulgunun kanıtını yazar. Kullanım "/techlookup www.ornek.com.tr".
+description: Bir web sitesini 7 bölümlük tek raporda çıkarır — kimlik (alan adı sahibi ve yaşı, siteyi yapan ajans, arşivde ilk görülme, şablonun ne zamandan beri yayında olduğu), teknolojiler (Wappalyzer gibi 15 grup; CMS sürümü, WordPress tema/eklentileri, dış alan adları), DNS ve sunucu (DNSSEC, CAA, SOA, Cloudflare turuncu/gri bulut, HTTPS kaydı, ülke, yeşil enerji), e-posta güvenliği (SPF, DMARC, DKIM, MTA-STS, TLS-RPT, BIMI), SSL ve güvenlik (sertifika, başlıklar, yönlendirme, HSTS önyükleme, çerez bayrakları), site dosyaları (robots, sitemap, security.txt, llms.txt, ads.txt, humans.txt) ve paylaşım etiketleri. Her bulgunun kanıtını yazar. Kullanım "/techlookup www.ornek.com.tr".
 argument-hint: <web adresi>
 model: haiku
 disable-model-invocation: true
@@ -65,6 +65,12 @@ Adres: `$ARGUMENTS`
 - Parmak izi verisi: github.com/enthec/webappanalyzer (Wappalyzer topluluk kopyası), 7 günde bir yenilenir, `veri/` altında önbellekte durur.
 - DKIM: adlar dışarıdan listelenemez; 35 yaygın ad denenir. Bulunamazsa ➖ "yaygın adlar arasında bulunamadı" — bu "DKIM yok" demek değildir.
 - Sunucu ülkesi: CDN arkasındaki sitelerde çoğunlukla "belirsiz" çıkar; asıl sunucunun ülkesi görünmez.
+  Şimdilik yazılan addan ölçülür (kanıtta adı yazar); sayfa başka bir ada yönlendiriyorsa o adın ülkesi olmayabilir.
+- Cloudflare bulutu: 🟠 turuncu = trafik Cloudflare'den geçer (IP Cloudflare aralığında, kesin). ⚪ gri = Cloudflare
+  yalnız DNS'i tutar; yalnız NS Cloudflare'deyse anlaşılır. "DNS başka firmada" = kısmi kurulum ya da Pages. DNS başka
+  firmadaysa gri kayıt "➖ Cloudflare'den geçmiyor" görünür. Hücre sayfanın adını ve yönlendiren adın simgesini verir;
+  ad ad sonuç tablonun altındaki "Cloudflare bulutu, ad ad" satırındadır. IP listesi pakete gömülü (tarihli).
+- Toplu CSV: 1.2.0'da `dns_cloudflare` sütunu eklendi; 1.1.0 ile yarım kalmış toplu tarama sürdürülemez, yeni dosya adı gerekir.
 - DNS kanıtında "1.1.1.1 üzerinden" yazıyorsa yerel DNS o sorguya cevap vermemiş, yedek sunucuya sorulmuştur.
 - Site dosyalarının içeriği bilerek basılmaz; yalnız var/yok ve sayılar.
 - Toplu tarama terminal komutudur, bu komutun işi değildir: `node ~/.claude/skills/techlookup/scripts/toplu.mjs --liste siteler.txt` (kullanıcı sorarsa söyle, kendin koşma).

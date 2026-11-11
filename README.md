@@ -55,6 +55,8 @@ techlookup --liste siteler.txt --cikti sonuc.csv    # dosya adını sen ver
 - **Yarıda kalırsa** (Ctrl+C, kapanan bilgisayar) aynı komutu yeniden çalıştır: "tamam" olan siteler atlanır,
   "ölçülemedi" olanlar yeniden denenir. Dosyaya yalnız sona ekleme yapılır.
 - Başka bir sürümün ya da başka bir işin CSV'sini verirsen dosyaya dokunmaz, yeni ad ister.
+- **1.2.0'da `dns_cloudflare` sütunu eklendi:** 1.1.0 ile yarım kalmış bir toplu tarama 1.2.0 ile sürdürülemez;
+  `--cikti` ile yeni bir dosya adı verin.
 - Siteler arasında 1 saniye beklenir; yüzlerce sitelik liste saatler sürebilir.
 - Alan adı sahibi sütunu **yoktur** (kişi adı olabilir).
 
@@ -94,8 +96,11 @@ Bölümler: 🪪 Kimlik · 🧩 Teknoloji · 🌐 DNS ve sunucu · ✉️ E-post
 ### 🌐 DNS ve sunucu
 | ➖ | DNSSEC (alan adı kayıtlarının imzası)       | kapalı (DS kaydı yok)                  | DNS |
 | ✅ | CAA (hangi firma sertifika verebilir)       | sertifika verebilir: letsencrypt.org   | CAA: 1 kayıt |
+| ✅ | Cloudflare bulutu                           | 🟠 turuncu · DNS başka firmada · yönlendiren ad: ➖ | IP 104.20.20.188 · CNAME …cdn.cloudflare.net · NS ornek-dns.net.tr |
 | ✅ | Sunucu ülkesi                               | Türkiye (TR)                           | RIPEstat (MaxMind GeoLite) |
 | ➖ | Yeşil enerji                                | kayıtta yeşil enerji beyanı yok        | Green Web Foundation |
+
+- **Cloudflare bulutu, ad ad:** www.ornek.com.tr: 🟠 turuncu · DNS başka firmada (IP 104.20.20.188 · CNAME www.ornek.com.tr.cdn.cloudflare.net) · ornek.com.tr: ➖ Cloudflare'den geçmiyor (IP 192.0.2.10)
 
 ### ✉️ E-posta güvenliği
 | ✅ | SPF (kimler bu alan adıyla posta gönderebilir) | 4 sorgu (sınır 10) · ~all           | TXT |
@@ -133,8 +138,11 @@ Bölümler: 🪪 Kimlik · 🧩 Teknoloji · 🌐 DNS ve sunucu · ✉️ E-post
    Bulunan sürümün **çıkış yılı** ve bugünkü **güncel sürüm** yalnız olgu olarak verilir; "eski" ya da
    "riskli" gibi bir hüküm verilmez. CMS sürümü sayfada yoksa CMS'in kendi bilinen dosyasından okunur;
    WordPress sitelerde tema ve eklentiler; siteye yük getiren **dış alan adları** "Diğer" grubunda.
-3. **🌐 DNS ve sunucu** — DNSSEC · CAA · SOA (birincil ad sunucusu) · HTTPS kaydı · sunucunun ülkesi ·
-   yeşil enerji kaydı.
+3. **🌐 DNS ve sunucu** — DNSSEC · CAA · SOA (birincil ad sunucusu) · **Cloudflare bulutu** · HTTPS kaydı ·
+   sunucunun ülkesi · yeşil enerji kaydı. Cloudflare bulutu satırı yazılan adı ve sayfanın son adresini ayrı ayrı
+   ölçer: 🟠 **turuncu** (trafik Cloudflare'den geçer; ziyaretçi IP'si ve form verisi Cloudflare'in sunucusuna
+   uğrar) · 🟠 **DNS başka firmada** (kısmi kurulum ya da Pages) · ⚪ **gri** (Cloudflare yalnız DNS'i tutar,
+   trafik doğrudan sunucuya) · ➖ **Cloudflare'den geçmiyor**.
 4. **✉️ E-posta güvenliği** — SPF (10 sorgu sınırının kaçı kullanılmış) · DMARC · DKIM · MTA-STS · TLS-RPT · BIMI.
 5. **🔒 SSL ve güvenlik** — sertifika ve altı güvenlik başlığı · sertifikanın kapsadığı adlar ve kalan gün ·
    `http://` adresinden başlayan yönlendirme zinciri · HSTS önyükleme listesinin üç koşulu · çerezlerin
@@ -170,6 +178,7 @@ yalnız raporu gösterir ve 3 satırlık yorumu yazar (Haiku modeliyle, tarama b
 | E-posta, doğrulama, barındırma, DNS güvenliği | DNS kayıtları (`dig`) · MTA-STS politika dosyası |
 | Sertifika, yönlendirme, çerezler | sitenin kendisi (443 kapısı, `http://` adresi, yanıt başlıkları) |
 | Sunucu ülkesi | RIPEstat (MaxMind GeoLite verisi) |
+| Cloudflare bulutu | DNS kayıtları (`dig` A · AAAA · CNAME · NS; IP yoksa sistem çözümleyicisi) + Cloudflare'in yayımladığı IP aralıkları (pakete gömülü liste, tarih `CLOUDFLARE_LISTE_TARIHI`) |
 | Yeşil enerji | Green Web Foundation |
 | Alan adı sahibi ve yaşı | `.tr` → TRABİS (`whois`) · diğerleri → RDAP |
 | Ajans | sayfanın alt kısmındaki imza, "Tasarım: X", kod içi not, meta etiketi; yoksa `humans.txt` |
@@ -191,6 +200,12 @@ bot doğrulama sayfaları ayıklanır. Arşivde boşluk varsa tarih aralık olar
   `TECHLOOKUP_DNS_YEDEK=<ip>`.
 - Sunucu tarafı yazılımlar çoğu sitede gizlidir; görünmüyorsa "bulunamadı" doğrudur.
 - "CDN arkasında" yazıyorsa asıl sunucu firması görünmez; sunucu ülkesi de çoğunlukla "belirsiz" çıkar.
+- **Cloudflare bulutu:** turuncu IP'den kesin anlaşılır. Gri yalnız alan adının DNS'i (NS) Cloudflare'deyse
+  anlaşılır; DNS başka firmadaysa gri bir kayıt "Cloudflare'den geçmiyor" görünür. NS ölçülemezse ➖ değil
+  ⚠️ ölçülemedi yazılır. IP listesi pakete gömülüdür; güncellemek için `https://www.cloudflare.com/ips-v4` ve
+  `https://www.cloudflare.com/ips-v6` çıktısını `scripts/dns.mjs` içindeki `CLOUDFLARE_ARALIKLARI` ile karşılaştırın
+  (araç bu adreslere tarama sırasında istek atmaz). Sunucu ülkesi satırı şimdilik yazılan addan ölçülür;
+  kanıtta hangi adın ölçüldüğü yazar.
 - `.com` gibi adreslerde alan adı sahibi neredeyse hep gizlidir (🔒); `.tr` adreslerinde çoğunlukla açıktır.
 - Ajans yalnız sitede bir imza varsa bulunur; imza yoksa tahmin edilmez.
 - Her toplayıcının bir süre sınırı vardır; dış kaynak cevap vermezse o satır ⚠️ olur, tarama sürer.
@@ -229,7 +244,7 @@ site dosyalarının içeriği. Toplu CSV'de alan adı sahibi sütunu yoktur.
 
 ```bash
 git clone https://github.com/inanc76/techlookup && cd techlookup
-npm test   # 52 ölçüt
+npm test   # 69 ölçüt
 ```
 
 ## Lisans
@@ -246,8 +261,8 @@ Sunucu ülkesi MaxMind GeoLite verisine dayanır (RIPEstat üzerinden).
 the agency that built the site and the previous one, first archive appearance, since when the current
 template has been live — via the Wayback Machine, comparing template fingerprints rather than content),
 **technology stack** in 15 fixed groups (with evidence, release year and latest version; CMS version from
-known files, WordPress theme and plugins, third-party domains), **DNS and server** (DNSSEC, CAA, SOA, HTTPS
-record, server country, green hosting), **email security** (SPF lookup count, DMARC, DKIM, MTA-STS, TLS-RPT,
+known files, WordPress theme and plugins, third-party domains), **DNS and server** (DNSSEC, CAA, SOA, Cloudflare
+orange/grey cloud per host, HTTPS record, server country, green hosting), **email security** (SPF lookup count, DMARC, DKIM, MTA-STS, TLS-RPT,
 BIMI), **SSL and security** (certificate, six security headers, SAN list and days left, redirect chain, HSTS
 preload conditions, cookie flags), **site files** (robots.txt, sitemap.xml, security.txt, llms.txt, ads.txt,
 humans.txt — structure only, never their content) and **sharing tags** (Open Graph, Twitter Card, JSON-LD

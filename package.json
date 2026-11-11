@@ -1,6 +1,6 @@
 {
   "name": "techlookup",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Bir web sitesinin kimliğini, teknolojilerini, DNS/e-posta güvenliğini, SSL ayarlarını, kök dosyalarını ve paylaşım etiketlerini 7 bölümlük tek raporda çıkarır; toplu CSV taraması; Claude Code /techlookup skill'i.",
   "type": "module",
   "bin": { "techlookup": "bin/techlookup.mjs" },
