@@ -9,7 +9,8 @@ import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync } from 'no
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import tls from 'node:tls';
-import { veritabaniDerle, eslestir, tarayiciIstekleri, adresTeknolojileri } from './eslesme.mjs';
+import { veritabaniDerle, ekImzaBirlestir, eslestir, tarayiciIstekleri, adresTeknolojileri } from './eslesme.mjs';
+import EK_IMZALAR from './ek-imzalar.mjs';
 import { grupla, GRUPLAR } from './kategoriler.mjs';
 import { dnsTopla, dnsYorumla, kokAlan, dnsGuvenlik, sunucuBilgisi, sunucuIp, cloudflareBulut, CF_ETIKET } from './dns.mjs';
 import { satir, SURUM, guvenliMetin, yorumSuz, dogrudanMi } from './ortak.mjs';
@@ -326,7 +327,7 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
   const { teknolojiler, not } = await veritabaniYukle();
   if (!teknolojiler) return olculemedi(host, not);
   if (not) notlar.push(not);
-  const db = veritabaniDerle(teknolojiler);
+  const db = veritabaniDerle(ekImzaBirlestir(teknolojiler, EK_IMZALAR));
 
   const yerel = /^(localhost|127\.|\d+\.\d+\.\d+\.\d+$)/.test(host);
   const yerelSatir = () => satir('olcmedi', 'ölçülemedi — yerel adres, DNS ve dış kaynak sorulmadı');

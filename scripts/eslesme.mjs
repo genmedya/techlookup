@@ -35,6 +35,36 @@ const derle = (x) => dizi(x).map(desenAyir);
 const derleNesne = (o) =>
   Object.fromEntries(Object.entries(o ?? {}).map(([k, v]) => [k.toLowerCase(), derle(v)]));
 
+/**
+ * Bizim ek imzalarımızı (scripts/ek-imzalar.mjs) webappanalyzer verisinin ÜSTÜNE ekler; veri nesnesi değişmez.
+ * Aynı alan/anahtar varsa iki desen yan yana durur (biri tutarsa yeter); Wappalyzer kuralı silinmez.
+ * Veride olmayan ad yeni kayıt açmaz — kategori bilinmeden gruplanamaz; uyarılır.
+ */
+export function ekImzaBirlestir(teknolojiler, ek, uyar = (m) => process.stderr.write(`${m}\n`)) {
+  const sonuc = { ...teknolojiler };
+  const yanYana = (a, b) => [...dizi(a), ...dizi(b)];
+  for (const [ad, ekT] of Object.entries(ek)) {
+    if (!sonuc[ad]) { uyar(`techlookup: ek imza "${ad}" veride yok, atlandı`); continue; }
+    const t = { ...sonuc[ad] };
+    for (const [alan, deger] of Object.entries(ekT)) {
+      const eski = t[alan];
+      if (eski == null) t[alan] = deger;
+      else if (typeof deger === 'string' || Array.isArray(deger)) t[alan] = yanYana(eski, deger);
+      else {
+        const o = { ...eski };
+        for (const [k, v] of Object.entries(deger)) {
+          const var_ = Object.keys(o).find((x) => x.toLowerCase() === k.toLowerCase()); // başlık adı büyük/küçük harf
+          if (var_) o[var_] = yanYana(o[var_], v);
+          else o[k] = v;
+        }
+        t[alan] = o;
+      }
+    }
+    sonuc[ad] = t;
+  }
+  return sonuc;
+}
+
 export function veritabaniDerle(teknolojiler) {
   const db = [];
   for (const [ad, t] of Object.entries(teknolojiler)) {
