@@ -82,6 +82,17 @@ export function tarayiciIstekleri(db) {
   return { js: [...js], dom };
 }
 
+const adDesenleri = new Map();
+function adDeseniAl(ad) {
+  if (!/[\\^$*+?()[\]{}|]/.test(ad)) return null;
+  if (!adDesenleri.has(ad)) {
+    let r = null;
+    try { r = new RegExp(`^(?:${ad})$`, 'i'); } catch { r = null; }
+    adDesenleri.set(ad, r);
+  }
+  return adDesenleri.get(ad);
+}
+
 const kisalt = (s, n = 60) => {
   s = String(s).replace(/\s+/g, ' ');
   return s.length > n ? s.slice(0, n) + '…' : s;
@@ -123,11 +134,20 @@ export function eslestir(db, sinyal) {
     for (const deger of liste ?? []) dene(t, desenler, deger, alan);
   };
 
+  // Çoğu ad düz metindir; bazıları (çoğunlukla çerez: "ASP\.NET_SessionId", "SESS[a-f0-9]{32}")
+  // desen olarak yazılır. Önce düz ad aranır, yoksa ad baştan sona desen olarak denenir.
   const nesneDene = (t, kurallar, kaynak, alan, gizli = false) => {
     if (!kaynak) return;
     for (const [ad, desenler] of Object.entries(kurallar)) {
-      if (!(ad in kaynak)) continue;
-      dene(t, desenler, kaynak[ad], `${alan} ${ad}`, gizli);
+      if (ad in kaynak) {
+        dene(t, desenler, kaynak[ad], `${alan} ${ad}`, gizli);
+        continue;
+      }
+      const adDeseni = adDeseniAl(ad);
+      if (!adDeseni) continue;
+      for (const anahtar of Object.keys(kaynak)) {
+        if (adDeseni.test(anahtar)) dene(t, desenler, kaynak[anahtar], `${alan} ${anahtar}`, gizli);
+      }
     }
   };
 
