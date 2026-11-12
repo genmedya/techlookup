@@ -17,7 +17,7 @@ import { grupla, GRUPLAR } from './kategoriler.mjs';
 import { dnsTopla, dnsYorumla, kokAlan, dnsGuvenlik, sunucuBilgisi, sunucuIp, cloudflareBulut, CF_ETIKET } from './dns.mjs';
 import { satir, SURUM, guvenliMetin, yorumSuz, dogrudanMi } from './ortak.mjs';
 import { cmsSurumu } from './cms-surum.mjs';
-import { wordpressIzleri, disAlanAdlari, paylasimEtiketleri } from './sayfa.mjs';
+import { wordpressIzleri, disAlanAdlari, paylasimEtiketleri, icBaglantiUzantilari } from './sayfa.mjs';
 import { epostaGuvenligi } from './eposta.mjs';
 import { siteDosyalari } from './dosyalar.mjs';
 import { sertifikaKapsami, hstsKosullari, setCookieBayraklari, cerezSatiri, yonlendirmeZinciri } from './guvenlik.mjs';
@@ -371,6 +371,7 @@ export async function calistir(girdi, { statik: yalnizStatik = false, hataSondas
   const sinyal = sinyalBirlestir(st.veri, tarayiciVeri);
   if (dnsHam) sinyal.dns = { MX: dnsHam.mx, TXT: dnsHam.txt, NS: dnsHam.ns, CNAME: dnsHam.cname };
   if (ssl?.veren) sinyal.certIssuer = ssl.veren;
+  sinyal.icUzantilar = icBaglantiUzantilari(sinyal.html, sinyal.url ?? adres);
 
   const bulgular = eslestir(db, sinyal);
   const hata = await hataSozu;

@@ -112,3 +112,38 @@ export function paylasimEtiketleri({ html = '', meta = {} } = {}) {
   }
   return { openGraph, twitter, jsonLd, hreflang, manifest };
 }
+
+// Aynı alan adına giden bağlantıların uzantısı sunucu dilini gösterir (php.net: 197 iç .php bağlantısı, 2026-11-12;
+// webappanalyzer .php desenini yalnız sayfanın KENDİ adresinde arar). Ölçüt: tests/ic-uzanti.test.mjs (K47).
+export const UZANTI_TEKNO = {
+  php: 'PHP',
+  aspx: 'Microsoft ASP.NET', asp: 'Microsoft ASP.NET', ashx: 'Microsoft ASP.NET', axd: 'Microsoft ASP.NET',
+  jsp: 'Java', jspx: 'Java', do: 'Java', action: 'Java',
+  cfm: 'Adobe ColdFusion', cfc: 'Adobe ColdFusion',
+};
+const BAG = /\b(?:href|action)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
+const UZ = /\.([a-z]{2,6})$/i;
+const ESIK = 2; // tek bağlantı eski bir sayfa olabilir; en az iki farklı yol
+
+/** → { teknolojiAdı: 'kanıt' } — en az ESIK farklı iç yolda aynı dil uzantısı */
+export function icBaglantiUzantilari(html = '', sayfaAdresi) {
+  let sayfa;
+  try { sayfa = new URL(sayfaAdresi); } catch { return {}; }
+  const site = kayitliAlan(sayfa.hostname);
+  const yollar = {};
+  for (const m of String(html).matchAll(BAG)) {
+    let u;
+    try { u = new URL((m[1] ?? m[2] ?? m[3]).replace(/&amp;/g, '&'), sayfa); } catch { continue; }
+    if (!/^https?:$/.test(u.protocol) || kayitliAlan(u.hostname) !== site) continue;
+    const uz = u.pathname.match(UZ)?.[1].toLowerCase();
+    if (!uz || !UZANTI_TEKNO[uz]) continue;
+    (yollar[uz] ??= new Set()).add(`${u.hostname}${u.pathname}`);
+  }
+  const sonuc = {};
+  for (const [uz, s] of Object.entries(yollar)) {
+    if (s.size < ESIK) continue;
+    const ad = UZANTI_TEKNO[uz];
+    sonuc[ad] = sonuc[ad] ? `${sonuc[ad]} · ${s.size} .${uz}` : `${s.size} iç bağlantı .${uz}`;
+  }
+  return sonuc;
+}

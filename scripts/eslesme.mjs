@@ -133,7 +133,8 @@ const kisalt = (s, n = 60) => {
  * sinyaller: {
  *   url, html, scriptSrc: [], scripts: [], meta: {ad: deger}, headers: {ad: deger},
  *   cookies: {ad: deger}, istekler: [url], certIssuer, dns: {MX: [], TXT: [], NS: []},
- *   js: {yol: deger} | null, dom: {secici: {exists, text, attributes, properties}} | null
+ *   js: {yol: deger} | null, dom: {secici: {exists, text, attributes, properties}} | null,
+ *   hataHtml: 404 sondası gövdesi | undefined, icUzantilar: {teknolojiAdı: kanıt} | undefined
  * }
  */
 export function eslestir(db, sinyal) {
@@ -215,6 +216,12 @@ export function eslestir(db, sinyal) {
         for (const [p, d] of Object.entries(kural.properties ?? {})) dene(t, derle(d), s.properties?.[p], `dom ${secici}.${p}`);
       }
     }
+  }
+
+  // iç bağlantı uzantısı (sayfa.mjs icBaglantiUzantilari): { teknolojiAdı: kanıt } — implies zinciri bunun üstünden de çalışır
+  for (const [ad, kanit] of Object.entries(sinyal.icUzantilar ?? {})) {
+    const t = db.find((x) => x.ad === ad);
+    if (t) ekle(t, 100, null, kanit);
   }
 
   // implies zinciri
