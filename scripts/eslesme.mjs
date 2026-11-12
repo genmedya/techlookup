@@ -86,6 +86,7 @@ export function veritabaniDerle(teknolojiler) {
       scripts: derle(t.scripts),
       xhr: derle(t.xhr),
       certIssuer: derle(t.certIssuer),
+      hataHtml: derle(t.hataHtml), // yalnız bizim ek imzalarımızda (404 sondası gövdesi)
       meta: derleNesne(t.meta),
       headers: derleNesne(t.headers),
       cookies: derleNesne(t.cookies),
@@ -193,6 +194,7 @@ export function eslestir(db, sinyal) {
     listeDene(t, t.scripts, sinyal.scripts, 'satır içi script');
     listeDene(t, t.xhr, istekHostlari, 'ağ isteği');
     if (sinyal.certIssuer) listeDene(t, t.certIssuer, [sinyal.certIssuer], 'sertifika');
+    if (sinyal.hataHtml) listeDene(t, t.hataHtml, [sinyal.hataHtml], 'hata sayfası');
     nesneDene(t, t.meta, sinyal.meta, 'meta');
     nesneDene(t, t.headers, sinyal.headers, 'başlık');
     nesneDene(t, t.cookies, sinyal.cookies, 'çerez', true);

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // /techlookup — bir web adresinin teknolojilerini çıkarır.
-// Kullanım: node techlookup.mjs <adres> [--statik] [--json]
+// Kullanım: node techlookup.mjs <adres> [--statik] [--json] [--404-yok]
 //   --statik  tarayıcı katmanını atla (yalnız ham kod + DNS + SSL)
+//   --404-yok 404 sondasını atla (olmayan sayfaya 2 istek; ortam: TECHLOOKUP_404=0)
 //   --json    makine okunur çıktı (testler kullanır)
 //   --skill   sona Claude'a kopyalama hatırlatması ekler (SKILL.md kullanır; terminalde gereksiz)
 // Çıkış: 0 sonuç var · 2 site hiç ölçülemedi
@@ -11,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import tls from 'node:tls';
 import { veritabaniDerle, ekImzaBirlestir, eslestir, tarayiciIstekleri, adresTeknolojileri } from './eslesme.mjs';
 import EK_IMZALAR from './ek-imzalar.mjs';
+import { hataSayfasiTara } from './hata-sayfasi.mjs';
 import { grupla, GRUPLAR } from './kategoriler.mjs';
 import { dnsTopla, dnsYorumla, kokAlan, dnsGuvenlik, sunucuBilgisi, sunucuIp, cloudflareBulut, CF_ETIKET } from './dns.mjs';
 import { satir, SURUM, guvenliMetin, yorumSuz, dogrudanMi } from './ortak.mjs';
@@ -317,7 +319,7 @@ export function markdownYaz(r) {
   return s.join('\n');
 }
 
-export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
+export async function calistir(girdi, { statik: yalnizStatik = false, hataSondasi = true } = {}) {
   let adres = girdi.trim();
   if (!/^https?:\/\//i.test(adres)) adres = 'https://' + adres;
   let host;
@@ -347,6 +349,10 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
   const sunucuSozu = yerel ? Promise.resolve(null) : sunucuIp(host, dnsHam).then(({ ip }) => sunucuBilgisi(host, ip));
   const dosyalarSozu = siteDosyalari(new URL(st.veri?.url ?? adres).origin);
   // yönlendiren ad ve sayfanın son adresi ayrı ayrı (ör. acibadem.com.tr → www, yalnız www Cloudflare'de)
+  // 404 sondası (K46): tarayıcıyla aynı anda koşar; verisi YALNIZ teknoloji eşleştirmesine gider
+  // (güvenlik başlığı, çerez bayrağı ve HSTS satırları ana sayfadan okunmaya devam eder). Kapatma: --404-yok / TECHLOOKUP_404=0
+  const hataSozu = hataSondasi && process.env.TECHLOOKUP_404 !== '0' && st.veri
+    ? hataSayfasiTara(new URL(st.veri.url).origin, { anaHtml: st.veri.html }) : Promise.resolve(null);
   const cloudflareSozu = yerel ? Promise.resolve(null) : cloudflareBulut({ hostlar: [host, new URL(st.veri?.url ?? adres).hostname] });
 
   // arşiv karşılaştırması tarayıcıyla aynı anda koşar; canlı iz ham sayfa kodundan çıkar (arşiv de ham kodu verir)
@@ -366,7 +372,17 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
   if (dnsHam) sinyal.dns = { MX: dnsHam.mx, TXT: dnsHam.txt, NS: dnsHam.ns, CNAME: dnsHam.cname };
   if (ssl?.veren) sinyal.certIssuer = ssl.veren;
 
-  const { gruplar, dislanan } = grupla(eslestir(db, sinyal));
+  const bulgular = eslestir(db, sinyal);
+  const hata = await hataSozu;
+  if (hata?.not) notlar.push(hata.not);
+  for (const y of hata?.yanitlar ?? []) {
+    for (const b of eslestir(db, { headers: y.basliklar, cookies: y.cerezler, hataHtml: y.govde })) {
+      if (bulgular.some((x) => x.ad === b.ad)) continue;
+      // hata sayfasının metni kanıta yazılmaz (site metni) — yalnız imzanın türü
+      bulgular.push({ ...b, kanit: b.kanit.map((k) => `404 sayfası: ${k.startsWith('hata sayfası') ? 'varsayılan hata sayfası' : k}`) });
+    }
+  }
+  const { gruplar, dislanan } = grupla(bulgular);
 
   // DNS grupları
   const ekle = (g, b) => {
@@ -476,10 +492,10 @@ if (dogrudanMi(import.meta.url)) {
   const arg = process.argv.slice(2);
   const adres = arg.find((a) => !a.startsWith('--'));
   if (!adres) {
-    console.error('Kullanım: node techlookup.mjs <adres> [--statik] [--json]');
+    console.error('Kullanım: node techlookup.mjs <adres> [--statik] [--json] [--404-yok]');
     process.exit(2);
   }
-  const r = await calistir(adres, { statik: arg.includes('--statik') });
+  const r = await calistir(adres, { statik: arg.includes('--statik'), hataSondasi: !arg.includes('--404-yok') });
   if (arg.includes('--json')) process.stdout.write(jsonMetni(r));
   else process.stdout.write(r.markdown + '\n');
   // Model komut çıktısını kullanıcının gördüğünü sanıp yalnız yorum yazabiliyordu (4 koşuda 1);

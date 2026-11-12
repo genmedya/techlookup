@@ -17,9 +17,9 @@ async function vaka(diger, ek, ortam) {
 }
 
 const KANIT = [
-  ['404 çerezi JSESSIONID', { kod: 404, cerezler: ['JSESSIONID=8F2A1B; Path=/'] }, 'Java'],
-  ['404 çerezi connect.sid', { kod: 404, cerezler: ['connect.sid=s%3AGIZLIDEGER123.imza; Path=/; HttpOnly'] }, 'Express'],
-  ['404 çerezi connect.sid (implies)', { kod: 404, cerezler: ['connect.sid=s%3Aabc; Path=/'] }, 'Node.js'],
+  ['404 çerezi JSESSIONID', { kod: 404, govde: 'Not Found', cerezler: ['JSESSIONID=8F2A1B; Path=/'] }, 'Java'],
+  ['404 çerezi connect.sid', { kod: 404, govde: 'Not Found', cerezler: ['connect.sid=s%3AGIZLIDEGER123.imza; Path=/; HttpOnly'] }, 'Express'],
+  ['404 çerezi connect.sid (implies)', { kod: 404, govde: 'Not Found', cerezler: ['connect.sid=s%3Aabc; Path=/'] }, 'Node.js'],
   ['ASP.NET hata sayfası', { kod: 404, govde: "<html><body><h1>Server Error in '/' Application.<hr></h1><h2><i>The resource cannot be found.</i></h2></body></html>" }, 'Microsoft ASP.NET'],
   ['IIS hata sayfası', { kod: 404, govde: '<html><head><title>IIS 10.0 Detailed Error - 404.0 - Not Found</title></head><body><h3>HTTP Error 404.0 - Not Found</h3></body></html>' }, 'IIS'],
   ['Spring hata sayfası', { kod: 404, govde: '<html><body><h1>Whitelabel Error Page</h1><p>This application has no explicit mapping for /error</p></body></html>' }, 'Spring'],
@@ -44,18 +44,19 @@ test('K46 (koruma) her yola 200 dönen sunucu → 404 kaynaklı bulgu YOK', asyn
   assert.equal(b.has('Java'), false);
 });
 test('K46 (koruma) 403 yanıtı → 404 kaynaklı bulgu YOK', async () => {
-  const { b } = await vaka({ kod: 403, cerezler: ['JSESSIONID=1; Path=/'] });
+  const { b } = await vaka({ kod: 403, govde: 'Forbidden', cerezler: ['JSESSIONID=1; Path=/'] });
   assert.equal(b.has('Java'), false);
 });
 test('K46 (koruma) sonda başka sunucuya yönlendirilir → bulgu YOK', async () => {
-  const hedef = await sunucuAc({}, { kod: 404, cerezler: ['JSESSIONID=1; Path=/'] });
+  const hedef = await sunucuAc({}, { kod: 404, govde: 'Not Found', cerezler: ['JSESSIONID=1; Path=/'] });
   try {
     const { b } = await vaka((yol) => ({ kod: 302, basliklar: { location: `${hedef.taban}${yol}` } }));
     assert.equal(b.has('Java'), false);
   } finally { hedef.kapat(); }
 });
 test('K46 (koruma) 404 başlıkları güvenlik / çerez / HSTS satırlarına girmez', async () => {
-  const { r } = await vaka({ kod: 404, basliklar: { 'strict-transport-security': 'max-age=63072000; includeSubDomains; preload', 'x-frame-options': 'DENY' }, cerezler: ['JSESSIONID=1; Path=/'] });
+  const { r, b } = await vaka({ kod: 404, govde: 'Not Found', basliklar: { 'strict-transport-security': 'max-age=63072000; includeSubDomains; preload', 'x-frame-options': 'DENY' }, cerezler: ['JSESSIONID=1; Path=/'] });
+  assert.ok(b.has('Java'), '404 verisi kullanılmadı — vaka boşa ölçüyor');
   const g = Object.fromEntries((r.guvenlik ?? []).map(([k, , v]) => [k, v]));
   assert.equal(g['strict-transport-security'], false);
   assert.equal(g['x-frame-options'], false);
@@ -63,12 +64,12 @@ test('K46 (koruma) 404 başlıkları güvenlik / çerez / HSTS satırlarına gir
   assert.doesNotMatch(r.guvenlikEk.cerezler.deger, /\d+ çerez/);
 });
 test('K46 (koruma) çerez değeri çıktıya sızmaz', async () => {
-  const { ham, b } = await vaka({ kod: 404, cerezler: ['connect.sid=s%3AGIZLIDEGER123.imza; Path=/'] });
+  const { ham, b } = await vaka({ kod: 404, govde: 'Not Found', cerezler: ['connect.sid=s%3AGIZLIDEGER123.imza; Path=/'] });
   assert.ok(b.has('Express'));
   assert.equal(ham.split('GIZLIDEGER123').length - 1, 0);
 });
 test('K46 (koruma) --404-yok ve TECHLOOKUP_404=0 → sunucuya sonda isteği 0', async () => {
-  const d = { kod: 404, cerezler: ['JSESSIONID=1; Path=/'] };
+  const d = { kod: 404, govde: 'Not Found', cerezler: ['JSESSIONID=1; Path=/'] };
   const bayrak = await vaka(d, ['--404-yok']);
   assert.equal(bayrak.sonda, 0);
   assert.equal(bayrak.b.has('Java'), false);
