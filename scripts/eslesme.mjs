@@ -35,6 +35,36 @@ const derle = (x) => dizi(x).map(desenAyir);
 const derleNesne = (o) =>
   Object.fromEntries(Object.entries(o ?? {}).map(([k, v]) => [k.toLowerCase(), derle(v)]));
 
+/**
+ * Bizim ek imzalarımızı (scripts/ek-imzalar.mjs) webappanalyzer verisinin ÜSTÜNE ekler; veri nesnesi değişmez.
+ * Aynı alan/anahtar varsa iki desen yan yana durur (biri tutarsa yeter); Wappalyzer kuralı silinmez.
+ * Veride olmayan ad yeni kayıt açmaz — kategori bilinmeden gruplanamaz; uyarılır.
+ */
+export function ekImzaBirlestir(teknolojiler, ek, uyar = (m) => process.stderr.write(`${m}\n`)) {
+  const sonuc = { ...teknolojiler };
+  const yanYana = (a, b) => [...dizi(a), ...dizi(b)];
+  for (const [ad, ekT] of Object.entries(ek)) {
+    if (!sonuc[ad]) { uyar(`techlookup: ek imza "${ad}" veride yok, atlandı`); continue; }
+    const t = { ...sonuc[ad] };
+    for (const [alan, deger] of Object.entries(ekT)) {
+      const eski = t[alan];
+      if (eski == null) t[alan] = deger;
+      else if (typeof deger === 'string' || Array.isArray(deger)) t[alan] = yanYana(eski, deger);
+      else {
+        const o = { ...eski };
+        for (const [k, v] of Object.entries(deger)) {
+          const var_ = Object.keys(o).find((x) => x.toLowerCase() === k.toLowerCase()); // başlık adı büyük/küçük harf
+          if (var_) o[var_] = yanYana(o[var_], v);
+          else o[k] = v;
+        }
+        t[alan] = o;
+      }
+    }
+    sonuc[ad] = t;
+  }
+  return sonuc;
+}
+
 export function veritabaniDerle(teknolojiler) {
   const db = [];
   for (const [ad, t] of Object.entries(teknolojiler)) {
@@ -56,6 +86,7 @@ export function veritabaniDerle(teknolojiler) {
       scripts: derle(t.scripts),
       xhr: derle(t.xhr),
       certIssuer: derle(t.certIssuer),
+      hataHtml: derle(t.hataHtml), // yalnız bizim ek imzalarımızda (404 sondası gövdesi)
       meta: derleNesne(t.meta),
       headers: derleNesne(t.headers),
       cookies: derleNesne(t.cookies),
@@ -82,6 +113,17 @@ export function tarayiciIstekleri(db) {
   return { js: [...js], dom };
 }
 
+const adDesenleri = new Map();
+function adDeseniAl(ad) {
+  if (!/[\\^$*+?()[\]{}|]/.test(ad)) return null;
+  if (!adDesenleri.has(ad)) {
+    let r = null;
+    try { r = new RegExp(`^(?:${ad})$`, 'i'); } catch { r = null; }
+    adDesenleri.set(ad, r);
+  }
+  return adDesenleri.get(ad);
+}
+
 const kisalt = (s, n = 60) => {
   s = String(s).replace(/\s+/g, ' ');
   return s.length > n ? s.slice(0, n) + '…' : s;
@@ -91,7 +133,8 @@ const kisalt = (s, n = 60) => {
  * sinyaller: {
  *   url, html, scriptSrc: [], scripts: [], meta: {ad: deger}, headers: {ad: deger},
  *   cookies: {ad: deger}, istekler: [url], certIssuer, dns: {MX: [], TXT: [], NS: []},
- *   js: {yol: deger} | null, dom: {secici: {exists, text, attributes, properties}} | null
+ *   js: {yol: deger} | null, dom: {secici: {exists, text, attributes, properties}} | null,
+ *   hataHtml: 404 sondası gövdesi | undefined, icUzantilar: {teknolojiAdı: kanıt} | undefined
  * }
  */
 export function eslestir(db, sinyal) {
@@ -123,11 +166,20 @@ export function eslestir(db, sinyal) {
     for (const deger of liste ?? []) dene(t, desenler, deger, alan);
   };
 
+  // Çoğu ad düz metindir; bazıları (çoğunlukla çerez: "ASP\.NET_SessionId", "SESS[a-f0-9]{32}")
+  // desen olarak yazılır. Önce düz ad aranır, yoksa ad baştan sona desen olarak denenir.
   const nesneDene = (t, kurallar, kaynak, alan, gizli = false) => {
     if (!kaynak) return;
     for (const [ad, desenler] of Object.entries(kurallar)) {
-      if (!(ad in kaynak)) continue;
-      dene(t, desenler, kaynak[ad], `${alan} ${ad}`, gizli);
+      if (ad in kaynak) {
+        dene(t, desenler, kaynak[ad], `${alan} ${ad}`, gizli);
+        continue;
+      }
+      const adDeseni = adDeseniAl(ad);
+      if (!adDeseni) continue;
+      for (const anahtar of Object.keys(kaynak)) {
+        if (adDeseni.test(anahtar)) dene(t, desenler, kaynak[anahtar], `${alan} ${anahtar}`, gizli);
+      }
     }
   };
 
@@ -143,6 +195,7 @@ export function eslestir(db, sinyal) {
     listeDene(t, t.scripts, sinyal.scripts, 'satır içi script');
     listeDene(t, t.xhr, istekHostlari, 'ağ isteği');
     if (sinyal.certIssuer) listeDene(t, t.certIssuer, [sinyal.certIssuer], 'sertifika');
+    if (sinyal.hataHtml) listeDene(t, t.hataHtml, [sinyal.hataHtml], 'hata sayfası');
     nesneDene(t, t.meta, sinyal.meta, 'meta');
     nesneDene(t, t.headers, sinyal.headers, 'başlık');
     nesneDene(t, t.cookies, sinyal.cookies, 'çerez', true);
@@ -163,6 +216,12 @@ export function eslestir(db, sinyal) {
         for (const [p, d] of Object.entries(kural.properties ?? {})) dene(t, derle(d), s.properties?.[p], `dom ${secici}.${p}`);
       }
     }
+  }
+
+  // iç bağlantı uzantısı (sayfa.mjs icBaglantiUzantilari): { teknolojiAdı: kanıt } — implies zinciri bunun üstünden de çalışır
+  for (const [ad, kanit] of Object.entries(sinyal.icUzantilar ?? {})) {
+    const t = db.find((x) => x.ad === ad);
+    if (t) ekle(t, 100, null, kanit);
   }
 
   // implies zinciri

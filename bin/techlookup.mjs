@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // techlookup — bir web sitesinin kimliğini ve teknolojisini çıkarır; Claude Code skill'ini kurar.
-//   techlookup <adres> [--statik] [--json]   doğrudan tarama (Claude gerekmez)
+//   techlookup <adres> [--statik] [--json] [--404-yok]   doğrudan tarama (Claude gerekmez)
 //   techlookup --liste siteler.txt [--cikti x.csv]   toplu tarama → CSV
 //   techlookup kur [--proje]                 /techlookup skill'ini ~/.claude/skills/ (veya ./.claude/skills/) altına kurar
 //   techlookup kaldir [--proje]              yalnız kendi kurduğu dosyaları siler
@@ -19,6 +19,7 @@ const YARDIM = `techlookup ${SURUM} — web sitesi kimliği ve teknoloji taramas
 
 Kullanım:
   techlookup <adres> [--statik] [--json]   Siteyi tarar, tabloyu terminale basar
+                                           --404-yok: olmayan sayfaya 2 istek atma (TECHLOOKUP_404=0)
   techlookup --liste siteler.txt [--cikti sonuc.csv] [--statik]
                                            Listedeki siteleri sırayla tarar, her siteyi CSV'ye
                                            bir satır yazar (varsayılan ./techlookup-toplu-YYYYMMDD.csv).
@@ -78,7 +79,7 @@ function kaldir(proje) {
 
 async function tara(adres, arg) {
   const { calistir, jsonMetni } = await import(join(KOK, 'scripts', 'techlookup.mjs'));
-  const r = await calistir(adres, { statik: arg.includes('--statik') });
+  const r = await calistir(adres, { statik: arg.includes('--statik'), hataSondasi: !arg.includes('--404-yok') });
   if (arg.includes('--json')) process.stdout.write(jsonMetni(r));
   else process.stdout.write(r.markdown + '\n');
   return r.cikis;

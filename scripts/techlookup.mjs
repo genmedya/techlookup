@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // /techlookup — bir web adresinin teknolojilerini çıkarır.
-// Kullanım: node techlookup.mjs <adres> [--statik] [--json]
+// Kullanım: node techlookup.mjs <adres> [--statik] [--json] [--404-yok]
 //   --statik  tarayıcı katmanını atla (yalnız ham kod + DNS + SSL)
+//   --404-yok 404 sondasını atla (olmayan sayfaya 2 istek; ortam: TECHLOOKUP_404=0)
 //   --json    makine okunur çıktı (testler kullanır)
 //   --skill   sona Claude'a kopyalama hatırlatması ekler (SKILL.md kullanır; terminalde gereksiz)
 // Çıkış: 0 sonuç var · 2 site hiç ölçülemedi
@@ -9,12 +10,14 @@ import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync } from 'no
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import tls from 'node:tls';
-import { veritabaniDerle, eslestir, tarayiciIstekleri, adresTeknolojileri } from './eslesme.mjs';
+import { veritabaniDerle, ekImzaBirlestir, eslestir, tarayiciIstekleri, adresTeknolojileri } from './eslesme.mjs';
+import EK_IMZALAR from './ek-imzalar.mjs';
+import { hataSayfasiTara } from './hata-sayfasi.mjs';
 import { grupla, GRUPLAR } from './kategoriler.mjs';
-import { dnsTopla, dnsYorumla, kokAlan, dnsGuvenlik, sunucuBilgisi, sunucuIp } from './dns.mjs';
+import { dnsTopla, dnsYorumla, kokAlan, dnsGuvenlik, sunucuBilgisi, sunucuIp, cloudflareBulut, CF_ETIKET } from './dns.mjs';
 import { satir, SURUM, guvenliMetin, yorumSuz, dogrudanMi } from './ortak.mjs';
 import { cmsSurumu } from './cms-surum.mjs';
-import { wordpressIzleri, disAlanAdlari, paylasimEtiketleri } from './sayfa.mjs';
+import { wordpressIzleri, disAlanAdlari, paylasimEtiketleri, icBaglantiUzantilari } from './sayfa.mjs';
 import { epostaGuvenligi } from './eposta.mjs';
 import { siteDosyalari } from './dosyalar.mjs';
 import { sertifikaKapsami, hstsKosullari, setCookieBayraklari, cerezSatiri, yonlendirmeZinciri } from './guvenlik.mjs';
@@ -146,6 +149,7 @@ function sinyalBirlestir(statik, tarayici) {
 
 // tablo hücresi: site metni VERİDİR — satır sonu/kontrol karakteri, HTML yorum işareti ve ters tırnak etkisiz, | kaçırılır
 const hucre = (x) => guvenliMetin(x, Infinity).replace(/\|/g, '\\|');
+const KANIT_AZAMI = 45; // teknoloji tablosunda kanıt hücresi (K40)
 const isaret = (d) => (d === 'tamam' ? '✅' : d === 'atlandı' ? '➖ atlandı' : `⚠️ ${d}`);
 export const IKON = { var: '✅', yok: '➖', olcmedi: '⚠️', eksik: '❌' };
 const GRUP_IKON = {
@@ -224,7 +228,7 @@ export function kimlikSatirlari(k) {
 }
 
 export const BOLUM_SATIRLARI = {
-  dnsSunucu: [['dnssec', 'DNSSEC (alan adı kayıtlarının imzası)'], ['caa', 'CAA (hangi firma sertifika verebilir)'], ['soa', 'SOA (birincil ad sunucusu)'], ['https', 'HTTPS kaydı (DNS\'te bağlantı ipucu)'], ['ulke', 'Sunucu ülkesi'], ['yesil', 'Yeşil enerji']],
+  dnsSunucu: [['dnssec', 'DNSSEC (alan adı kayıtlarının imzası)'], ['caa', 'CAA (hangi firma sertifika verebilir)'], ['soa', 'SOA (birincil ad sunucusu)'], ['cloudflare', 'Cloudflare bulutu'], ['https', 'HTTPS kaydı (DNS\'te bağlantı ipucu)'], ['ulke', 'Sunucu ülkesi'], ['yesil', 'Yeşil enerji']],
   eposta: [['spf', 'SPF (kimler bu alan adıyla posta gönderebilir)'], ['dmarc', 'DMARC (sahte postaya ne yapılır)'], ['dkim', 'DKIM (posta imzası)'], ['mtaSts', 'MTA-STS (şifreli posta zorunluluğu)'], ['tlsRpt', 'TLS-RPT (şifreleme hata raporu)'], ['bimi', 'BIMI (gelen kutusunda marka logosu)']],
   guvenlikEk: [['kapsam', 'Sertifika kapsamı'], ['yonlendirme', 'Yönlendirme zinciri'], ['hstsOnyukleme', 'HSTS önyükleme koşulları'], ['cerezler', 'Çerez bayrakları']],
   dosyalar: [['robots', 'robots.txt'], ['sitemap', 'sitemap.xml'], ['securityTxt', 'security.txt'], ['llms', 'llms.txt'], ['ads', 'ads.txt'], ['humans', 'humans.txt']],
@@ -257,7 +261,7 @@ function bolum(s, baslik, basliklar, satirlar) {
   s.push(...satirlar);
 }
 
-function markdownYaz(r) {
+export function markdownYaz(r) {
   const s = [];
   s.push(`## 🔎 Teknoloji taraması — ${r.host}`);
   s.push('');
@@ -271,7 +275,11 @@ function markdownYaz(r) {
   bolum(s, '### 🪪 Site kimliği', '|  | Bilgi | Değer | Kaynak |',
     kimlikSatirlari(r.kimlik).map(([i, b, d, k]) => `| ${i} | ${b} | ${hucre(d)} | ${hucre(k)} |`));
 
+  // Terminal geniş tabloyu tablo olarak çizemiyor (K40, ölçüldü 2026-11-06: 372 sütun). Uzun listeler
+  // tablonun altına iner, kanıt hücresi ilk kanıtın kısa hâlidir; tam kanıt --json çıktısında durur.
   const tek = [];
+  const altListe = [];
+  const kanitHucresi = (k = []) => (k.length ? `${guvenliMetin(k[0], KANIT_AZAMI)}${k.length > 1 ? ` +${k.length - 1}` : ''}` : '');
   for (const g of r.grupSirasi) {
     const liste = r.gruplar[g];
     const baslik = `${GRUP_IKON[g] ?? ''} **${g}**`;
@@ -284,12 +292,24 @@ function markdownYaz(r) {
     liste.forEach((t, i) => {
       const guven = t.guven != null && t.guven < 100 ? ` (olasılık %${t.guven})` : '';
       const [surum, guncel] = surumHucreleri(t);
-      tek.push(`| ${i === 0 ? IKON.var : ''} | ${i === 0 ? baslik : ''} | ${hucre(t.ad)}${guven} | ${hucre(surum)} | ${hucre(guncel)} | ${hucre(t.kanit?.join(' · ') ?? '')} |`);
+      let ad = t.ad;
+      const ayrac = Array.isArray(t.liste) ? ad.indexOf(': ') : -1;
+      if (ayrac > 0) {
+        altListe.push(`- **${hucre(ad.slice(0, ayrac))}:** ${hucre(ad.slice(ayrac + 2))}`);
+        ad = `${ad.slice(0, ayrac)} — liste tablonun altında`;
+      }
+      tek.push(`| ${i === 0 ? IKON.var : ''} | ${i === 0 ? baslik : ''} | ${hucre(ad)}${guven} | ${hucre(surum)} | ${hucre(guncel)} | ${hucre(kanitHucresi(t.kanit))} |`);
     });
   }
   bolum(s, '### 🧩 Teknolojiler', '|  | Grup | Teknoloji | Sürüm (yıl) | Güncel sürüm | Kanıt |', tek);
+  if (altListe.length) s.push('', ...altListe);
 
   bolum(s, '### 🌐 DNS ve sunucu', '|  | Kontrol | Sonuç | Kanıt |', BOLUM_SATIRLARI.dnsSunucu.map(([k, ad]) => bolumSatiri(ad, r.dnsSunucu?.[k])));
+  // iki ad (yönlendiren + sayfa) tablo hücresine sığmaz (K41-genislik): ad ad liste tablonun altında
+  const cf = r.dnsSunucu?.cloudflare?.hostlar;
+  if (cf?.length > 1) {
+    s.push('', `- **Cloudflare bulutu, ad ad:** ${cf.map((h) => `${guvenliMetin(h.host, 80)}: ${CF_ETIKET[h.sinif] ?? CF_ETIKET.olcmedi}${h.ip ? ` (IP ${h.ip}${h.cname ? ` · CNAME ${guvenliMetin(h.cname, 60)}` : ''})` : ''}`).join(' · ')}`);
+  }
   bolum(s, '### ✉️ E-posta güvenliği', '|  | Kontrol | Sonuç | Kanıt |', BOLUM_SATIRLARI.eposta.map(([k, ad]) => bolumSatiri(ad, r.eposta?.[k])));
 
   bolum(s, '### 🔒 SSL ve güvenlik', '|  | Kontrol | Sonuç | Kanıt |', sslSatirlari(r).map(([i, ad, d, k]) => `| ${i} | ${ad} | ${hucre(d)} | ${hucre(k)} |`));
@@ -299,7 +319,7 @@ function markdownYaz(r) {
   return s.join('\n');
 }
 
-export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
+export async function calistir(girdi, { statik: yalnizStatik = false, hataSondasi = true } = {}) {
   let adres = girdi.trim();
   if (!/^https?:\/\//i.test(adres)) adres = 'https://' + adres;
   let host;
@@ -309,7 +329,7 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
   const { teknolojiler, not } = await veritabaniYukle();
   if (!teknolojiler) return olculemedi(host, not);
   if (not) notlar.push(not);
-  const db = veritabaniDerle(teknolojiler);
+  const db = veritabaniDerle(ekImzaBirlestir(teknolojiler, EK_IMZALAR));
 
   const yerel = /^(localhost|127\.|\d+\.\d+\.\d+\.\d+$)/.test(host);
   const yerelSatir = () => satir('olcmedi', 'ölçülemedi — yerel adres, DNS ve dış kaynak sorulmadı');
@@ -328,6 +348,12 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
   // dig A yerel çözümleyicide zaman aşımına düşebiliyor (ölçüldü 2026-10-17): IP yoksa sistem çözümleyicisi
   const sunucuSozu = yerel ? Promise.resolve(null) : sunucuIp(host, dnsHam).then(({ ip }) => sunucuBilgisi(host, ip));
   const dosyalarSozu = siteDosyalari(new URL(st.veri?.url ?? adres).origin);
+  // yönlendiren ad ve sayfanın son adresi ayrı ayrı (ör. acibadem.com.tr → www, yalnız www Cloudflare'de)
+  // 404 sondası (K46): tarayıcıyla aynı anda koşar; verisi YALNIZ teknoloji eşleştirmesine gider
+  // (güvenlik başlığı, çerez bayrağı ve HSTS satırları ana sayfadan okunmaya devam eder). Kapatma: --404-yok / TECHLOOKUP_404=0
+  const hataSozu = hataSondasi && process.env.TECHLOOKUP_404 !== '0' && st.veri
+    ? hataSayfasiTara(new URL(st.veri.url).origin, { anaHtml: st.veri.html }) : Promise.resolve(null);
+  const cloudflareSozu = yerel ? Promise.resolve(null) : cloudflareBulut({ hostlar: [host, new URL(st.veri?.url ?? adres).hostname] });
 
   // arşiv karşılaştırması tarayıcıyla aynı anda koşar; canlı iz ham sayfa kodundan çıkar (arşiv de ham kodu verir)
   const sablonSozu = yerel ? Promise.resolve({ durum: 'ölçülemedi (yerel adres, arşivde yok)' })
@@ -345,8 +371,19 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
   const sinyal = sinyalBirlestir(st.veri, tarayiciVeri);
   if (dnsHam) sinyal.dns = { MX: dnsHam.mx, TXT: dnsHam.txt, NS: dnsHam.ns, CNAME: dnsHam.cname };
   if (ssl?.veren) sinyal.certIssuer = ssl.veren;
+  sinyal.icUzantilar = icBaglantiUzantilari(sinyal.html, sinyal.url ?? adres);
 
-  const { gruplar, dislanan } = grupla(eslestir(db, sinyal));
+  const bulgular = eslestir(db, sinyal);
+  const hata = await hataSozu;
+  if (hata?.not) notlar.push(hata.not);
+  for (const y of hata?.yanitlar ?? []) {
+    for (const b of eslestir(db, { headers: y.basliklar, cookies: y.cerezler, hataHtml: y.govde })) {
+      if (bulgular.some((x) => x.ad === b.ad)) continue;
+      // hata sayfasının metni kanıta yazılmaz (site metni) — yalnız imzanın türü
+      bulgular.push({ ...b, kanit: b.kanit.map((k) => `404 sayfası: ${k.startsWith('hata sayfası') ? 'varsayılan hata sayfası' : k}`) });
+    }
+  }
+  const { gruplar, dislanan } = grupla(bulgular);
 
   // DNS grupları
   const ekle = (g, b) => {
@@ -388,7 +425,7 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
   // CMS sürümü bilinen dosyadan dolar, sonra yıl/güncel sürüm o sürüme göre bulunur
   const sayfaOrigin = new URL(sinyal.url ?? adres).origin;
   const surumSozu = cmsSurumu(gruplar, sayfaOrigin, sinyal.html).then(() => surumleriEkle(gruplar));
-  const [alanAdi, sablon, , dnsG, sunucu, epostaHam, dosyalar] = await Promise.all([alanAdiSozu, sablonSozu, surumSozu, dnsGuvenlikSozu, sunucuSozu, epostaSozu, dosyalarSozu]);
+  const [alanAdi, sablon, , dnsG, sunucu, epostaHam, dosyalar, cloudflare] = await Promise.all([alanAdiSozu, sablonSozu, surumSozu, dnsGuvenlikSozu, sunucuSozu, epostaSozu, dosyalarSozu, cloudflareSozu]);
 
   // WordPress teması / eklentileri: sayfa kodu ve isteklerdeki /wp-content/ yollarından (ek istek yok)
   const wp = wordpressIzleri({ html: sinyal.html, istekler: sinyal.istekler, scriptSrc: sinyal.scriptSrc });
@@ -409,7 +446,7 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
   if (dis.liste.length) (gruplar['Diğer'] ??= []).push({ ad: `Dış alan adları (${dis.liste.length}): ${dis.ad}`, kategoriler: [], surum: null, liste: dis.liste, kanit: [izKaynak] });
   const eposta = Object.fromEntries(['spf', 'dmarc', 'dkim', 'mtaSts', 'tlsRpt', 'bimi'].map((k) => [k, epostaHam?.[k] ?? yerelSatir()]));
   const dnsSunucu = {
-    dnssec: dnsG?.dnssec ?? yerelSatir(), caa: dnsG?.caa ?? yerelSatir(), soa: dnsG?.soa ?? yerelSatir(), https: dnsG?.https ?? yerelSatir(),
+    dnssec: dnsG?.dnssec ?? yerelSatir(), caa: dnsG?.caa ?? yerelSatir(), soa: dnsG?.soa ?? yerelSatir(), cloudflare: cloudflare ?? yerelSatir(), https: dnsG?.https ?? yerelSatir(),
     ulke: sunucu?.ulke ?? yerelSatir(), yesil: sunucu?.yesil ?? yerelSatir(),
   };
   // sayfadaki imza önceliklidir; yoksa humans.txt'teki ajans adayı
@@ -429,6 +466,7 @@ export async function calistir(girdi, { statik: yalnizStatik = false } = {}) {
       dosyalar: Object.values(dosyalar).every((x) => x.durum === 'olcmedi') ? 'ölçülemedi' : 'tamam',
       ulke: yerel ? 'atlandı' : dnsSunucu.ulke.durum === 'olcmedi' ? 'ölçülemedi' : 'tamam',
       yesilEnerji: yerel ? 'atlandı' : dnsSunucu.yesil.durum === 'olcmedi' ? 'ölçülemedi' : 'tamam',
+      cloudflare: yerel ? 'atlandı' : dnsSunucu.cloudflare.durum === 'olcmedi' ? 'ölçülemedi' : 'tamam',
     },
     ssl: ssl ? { veren: ssl.veren, bitis: ssl.bitis, tls: ssl.tls, gecerli: ssl.gecerli, adlar: ssl.kapsam.adlar, kalanGun: ssl.kapsam.kalanGun } : null,
     guvenlik,
@@ -455,10 +493,10 @@ if (dogrudanMi(import.meta.url)) {
   const arg = process.argv.slice(2);
   const adres = arg.find((a) => !a.startsWith('--'));
   if (!adres) {
-    console.error('Kullanım: node techlookup.mjs <adres> [--statik] [--json]');
+    console.error('Kullanım: node techlookup.mjs <adres> [--statik] [--json] [--404-yok]');
     process.exit(2);
   }
-  const r = await calistir(adres, { statik: arg.includes('--statik') });
+  const r = await calistir(adres, { statik: arg.includes('--statik'), hataSondasi: !arg.includes('--404-yok') });
   if (arg.includes('--json')) process.stdout.write(jsonMetni(r));
   else process.stdout.write(r.markdown + '\n');
   // Model komut çıktısını kullanıcının gördüğünü sanıp yalnız yorum yazabiliyordu (4 koşuda 1);

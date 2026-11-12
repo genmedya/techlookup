@@ -2,6 +2,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { lookup as dnsLookup } from 'node:dns/promises';
+import { BlockList, isIP } from 'node:net';
 import { satir, sinirliGetir, jsonCoz, sureSiniri, sureMetni } from './ortak.mjs';
 
 const koş = promisify(execFile);
@@ -326,6 +327,112 @@ async function dnsGuvenlikIc(kok, host, secenek) {
   };
 }
 
+// ---------- Cloudflare bulutu (turuncu / gri) ----------
+// Turuncu: trafik Cloudflare'den geçer (IP Cloudflare aralığında). Gri: Cloudflare yalnız DNS'i tutar (NS Cloudflare,
+// IP başka yerde). DNS başka firmadaysa (kısmi kurulum / Pages) gri bir kayıt "Cloudflare'den geçmiyor"dan ayrılamaz.
+// kaynak: cloudflare.com/ips-v4 ve cloudflare.com/ips-v6 · 2026-11-11 — güncelleme adımı README "Veri kaynakları"nda.
+export const CLOUDFLARE_LISTE_TARIHI = '2026-11-11';
+export const CLOUDFLARE_ARALIKLARI = [
+  '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22', '141.101.64.0/18', '108.162.192.0/18',
+  '190.93.240.0/20', '188.114.96.0/20', '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+  '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+  '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32', '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32',
+];
+const cfAg = new BlockList();
+for (const a of CLOUDFLARE_ARALIKLARI) {
+  const [ag, onek] = a.split('/');
+  cfAg.addSubnet(ag, Number(onek), ag.includes(':') ? 'ipv6' : 'ipv4');
+}
+
+/** IP Cloudflare'in yayımladığı aralıklardan birinde mi (ağ maskesiyle; metin öneki değil). */
+export function cloudflareIpMi(ip) {
+  const tur = isIP(String(ip ?? ''));
+  return tur ? cfAg.check(String(ip), tur === 6 ? 'ipv6' : 'ipv4') : false;
+}
+
+const CF_NS = /\.ns\.cloudflare\.com\.?$/i;
+const YEREL_HOST = /^(localhost|127\.|\d+\.\d+\.\d+\.\d+$)/;
+export const CF_ETIKET = {
+  turuncu: '🟠 turuncu',
+  dis: '🟠 turuncu · DNS başka firmada',
+  gri: '⚪ gri (yalnız DNS)',
+  yok: "➖ Cloudflare'den geçmiyor",
+  olcmedi: '⚠️ ölçülemedi',
+};
+// tablo hücresinde ikinci ad yalnız simgeyle yazılır (iki uzun ad hücreye sığmaz, K41-genislik); tam liste tablonun altında
+const CF_KISA = { turuncu: '🟠', dis: '🟠', gri: '⚪ gri', yok: '➖', olcmedi: '⚠️' };
+const CF_CNAME = /\.cdn\.cloudflare\.net\.?$/i;
+// DNS kaydı alan sahibinin yazdığı metindir: ad değilse basılmaz, uzunsa sondan kısaltılır (anlamlı kısım sondadır)
+function kayitAdi(k) {
+  const ad = String(k ?? '').trim().replace(/\.$/, '');
+  if (!guvenliAd(ad)) return '(geçersiz kayıt)';
+  return ad.length > 40 ? `…${ad.slice(-39)}` : ad;
+}
+
+/**
+ * Her host için turuncu · DNS başka firmada · gri · geçmiyor · ölçülemedi.
+ * hostlar: [yazılan ad, sayfanın son adresinin hostu]; rapor sayfanın hostunu önce yazar.
+ */
+export function cloudflareBulut({ hostlar }, secenek = {}) {
+  const { sure = 25_000 } = secenek;
+  return sureSiniri(cloudflareBulutIc(hostlar, secenek), sure, () => satir('olcmedi', sureMetni(sure)));
+}
+
+async function cloudflareBulutIc(hostlar, secenek) {
+  const sor = (tur, ad) => digSor(tur, ad, secenek);
+  const lookup = secenek.lookup ?? dnsLookup;
+  const nsSozleri = new Map();
+  const nsBak = (kok) => {
+    if (!nsSozleri.has(kok)) {
+      nsSozleri.set(kok, sor('NS', kok).then((c) => (c.durum === 'NOERROR' && c.kayitlar.length
+        ? { cf: c.kayitlar.some((k) => CF_NS.test(k)), ilk: c.kayitlar[0] }
+        : { cf: null, neden: `NS ${c.durum ?? 'ölçülemedi'}` })));
+    }
+    return nsSozleri.get(kok);
+  };
+
+  const hostBak = async (host) => {
+    if (!guvenliAd(host) || YEREL_HOST.test(host)) return { host, sinif: 'olcmedi', neden: 'yönlendirme yerel/geçersiz adrese gidiyor' };
+    const [a, aaaa, cname, ns] = await Promise.all([sor('A', host), sor('AAAA', host), sor('CNAME', host), nsBak(kokAlan(host))]);
+    let ipler = [...a.kayitlar, ...aaaa.kayitlar].filter((x) => isIP(x));
+    let ipKaynak = 'dig';
+    // dig boş ya da NXDOMAIN dönebiliyor (ölçüldü: K34b, 2026-11-11 acibadem): sayfayı açan yol sistem çözümleyicisidir
+    if (!ipler.length) {
+      try {
+        const l = await lookup(host, { all: true });
+        ipler = (Array.isArray(l) ? l : [l]).map((x) => x?.address).filter((x) => isIP(x ?? ''));
+        ipKaynak = 'sistem çözümleyicisi';
+      } catch { ipler = []; }
+    }
+    const cnameAdi = cname.kayitlar[0] ? kayitAdi(cname.kayitlar[0]) : null;
+    if (!ipler.length) return { host, sinif: 'olcmedi', neden: 'IP adresi alınamadı', cname: cnameAdi, ns };
+    const cfIp = ipler.find(cloudflareIpMi);
+    const ip = cfIp ?? ipler[0];
+    let sinif;
+    if (cfIp) sinif = ns.cf === false ? 'dis' : 'turuncu';
+    else sinif = ns.cf === true ? 'gri' : ns.cf === false ? 'yok' : 'olcmedi';
+    return { host, sinif, ip, cf: Boolean(cfIp), ipKaynak, cname: cnameAdi, ns, ...(sinif === 'olcmedi' ? { neden: `${ns.neden} — gri ile "geçmiyor" ayrılamaz` } : {}) };
+  };
+
+  const sonuclar = await Promise.all([...new Set(hostlar)].reverse().map(hostBak));
+  const [sayfa, ...digerleri] = sonuclar;
+  const ayni = digerleri.every((x) => x.sinif === sayfa.sinif);
+  const deger = [CF_ETIKET[sayfa.sinif], ...(ayni ? [] : digerleri.map((x) => `yönlendiren ad: ${CF_KISA[x.sinif]}`))].join(' · ');
+  const durum = sonuclar.some((x) => ['turuncu', 'dis', 'gri'].includes(x.sinif)) ? 'var'
+    : sonuclar.some((x) => x.sinif === 'olcmedi') ? 'olcmedi' : 'yok';
+  // kanıt: sayfanın hostu (ilk satır) — tam liste --json'da
+  const s = sayfa;
+  const kanit = [
+    s.ip ? `IP ${s.ip}${s.ipKaynak === 'sistem çözümleyicisi' ? ' (sistem çözümleyicisi)' : ''}` : null,
+    s.cname ? `CNAME ${CF_CNAME.test(s.cname) ? '…cdn.cloudflare.net' : s.cname}` : null,
+    s.ns ? (s.ns.ilk ? `NS ${kokAlan(kayitAdi(s.ns.ilk).replace(/^…/, ''))}` : s.ns.neden) : null,
+    s.neden && s.sinif === 'olcmedi' && !s.ip ? s.neden : null,
+  ].filter(Boolean).join(' · ').slice(0, 80);
+  return satir(durum, deger, kanit, {
+    hostlar: sonuclar.map(({ host, sinif, ip, cname }) => ({ host, sinif, ip: ip ?? null, cname: cname ?? null })),
+  });
+}
+
 // ---------- sunucu ülkesi · yeşil enerji ----------
 const ulkeAdi = (kod) => { try { return new Intl.DisplayNames(['tr'], { type: 'region' }).of(kod); } catch { return kod; } };
 
@@ -347,8 +454,8 @@ async function sunucuBilgisiIc(host, ip, getir) {
     const { veri, hata } = jsonCoz(ripe);
     const kod = veri?.data?.located_resources?.[0]?.locations?.[0]?.country;
     if (hata) ulke = satir('olcmedi', `ölçülemedi — RIPEstat: ${hata}`);
-    else if (!kod || kod === '?') ulke = satir('yok', 'belirsiz (anycast / CDN ağı, konum tek ülkeye bağlanmıyor)', `RIPEstat (MaxMind GeoLite) · IP ${ip}`);
-    else ulke = satir('var', `${ulkeAdi(kod)} (${kod})`, `RIPEstat (MaxMind GeoLite) · IP ${ip}`, { kod });
+    else if (!kod || kod === '?') ulke = satir('yok', 'belirsiz (anycast / CDN ağı, konum tek ülkeye bağlanmıyor)', `RIPEstat (MaxMind GeoLite) · ${host} · IP ${ip}`);
+    else ulke = satir('var', `${ulkeAdi(kod)} (${kod})`, `RIPEstat (MaxMind GeoLite) · ${host} · IP ${ip}`, { kod });
   }
 
   const g = jsonCoz(yesil);
