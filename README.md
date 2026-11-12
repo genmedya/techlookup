@@ -198,7 +198,11 @@ bot doğrulama sayfaları ayıklanır. Arşivde boşluk varsa tarih aralık olar
 - Bazı ev modemleri belirli DNS sorgularına (CAA, DS, HTTPS kaydı) hiç cevap vermez. O zaman sorgu bir kez
   `1.1.1.1`'e sorulur ve kanıt sütununda yazar. Kapatmak için `TECHLOOKUP_DNS_YEDEK=yok`; başka sunucu için
   `TECHLOOKUP_DNS_YEDEK=<ip>`.
-- Sunucu tarafı yazılımlar çoğu sitede gizlidir; görünmüyorsa "bulunamadı" doğrudur.
+- Sunucu tarafı yazılımlar (dil, çatı) üç yerden okunur: ana sayfanın başlık ve çerezleri, **404 sayfası** ve sayfadaki
+  iç bağlantıların uzantısı (`.php`, `.aspx`, `.jsp`, `.cfm`). 404 sayfası için her siteye **2 ek istek** atılır
+  (olmayan bir adres + aynısının `.aspx` hâli); kapatmak için `--404-yok` ya da `TECHLOOKUP_404=0`.
+  Wappalyzer verisinde olmayan, ölçülmüş izlere dayanan ek imzalar `scripts/ek-imzalar.mjs`'tedir.
+  Hiç iz vermeyen sitede (çoğunlukla CDN arkasında) "bulunamadı" doğrudur; tahmin yapılmaz.
 - "CDN arkasında" yazıyorsa asıl sunucu firması görünmez; sunucu ülkesi de çoğunlukla "belirsiz" çıkar.
 - **Cloudflare bulutu:** turuncu IP'den kesin anlaşılır. Gri yalnız alan adının DNS'i (NS) Cloudflare'deyse
   anlaşılır; DNS başka firmadaysa gri bir kayıt "Cloudflare'den geçmiyor" görünür. NS ölçülemezse ➖ değil

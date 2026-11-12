@@ -58,7 +58,14 @@ Adres: `$ARGUMENTS`
 - Sürüm yılı / güncel sürüm: ön yüz kütüphaneleri npm'den (sürüm başına gün), sunucu yazılımları
   endoflife.date'ten (çoğunlukla yalnız ailenin yılı → "aile: 2014"). Kaynakta olmayanlar "➖ kaynakta yok"
   (ör. IIS); kaynak cevap vermezse "⚠️ ölçülemedi". "11 (≥2021)" = yalnız ana sürüm biliniyor. 7 gün önbellek.
-- Backend çoğu sitede gizlidir; görünmüyorsa "bulunamadı" doğrudur.
+- Backend (sunucu dili/çatısı) izleri üç yerden okunur: ana sayfanın başlık ve çerezleri, **404 sayfası** (olmayan bir
+  sayfa istenir; bazı siteler dil izini yalnız orada bırakır) ve sayfadaki iç bağlantıların uzantısı (`.php`, `.aspx`,
+  `.jsp`, `.cfm`). Bunun için her siteye **2 ek istek** atılır; güvenlik duvarı bunu tarama sayabilir —
+  `--404-yok` ya da `TECHLOOKUP_404=0` ile kapanır.
+- Wappalyzer verisinde olmayan, ölçülmüş izlere dayanan ek imzalar `scripts/ek-imzalar.mjs`'tedir (Laravel şifreli
+  çerezi, ASP.NET MVC sürümü, `x-runtime` → Ruby gibi).
+- CDN arkasında iz bırakmayan sitede (Cloudflare gibi; başlık, çerez, 404 sayfası ve bağlantılar dil vermiyor) Backend
+  "bulunamadı" doğrudur — tahmin yapılmaz. Wappalyzer'ın sitesi birden çok sayfaya baktığı için bazen daha çok bulabilir.
 - "CDN arkasında" yazıyorsa asıl sunucu firması görünmez.
 - Teknoloji tablosu terminale sığsın diye kanıt hücresi ilk kanıtın kısa hâlidir ("+1" = bir kanıt daha); uzun listeler
   (dış alan adları, WordPress eklentileri) tablonun altında tam yazılır. Tam kanıt `--json` çıktısındadır.
